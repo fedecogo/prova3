@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useRef } from 'react'
+import React, { useCallback, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -15,6 +15,7 @@ import classes from './index.module.scss'
 type FormData = {
   email: string
   password: string
+  mfaCode?: string //?:campo opz
 }
 
 const LoginForm: React.FC = () => {
@@ -23,7 +24,9 @@ const LoginForm: React.FC = () => {
   const redirect = useRef(searchParams.get('redirect'))
   const { login } = useAuth()
   const router = useRouter()
-  const [error, setError] = React.useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [showMfaInput, setShowMfaInput] = useState(false) //controllare quando mostra mfa
+  const [generatedMfaCode, setGeneratedMfaCode] = useState<string | null>(null) //salva mfc
 
   const {
     register,
@@ -34,14 +37,26 @@ const LoginForm: React.FC = () => {
   const onSubmit = useCallback(
     async (data: FormData) => {
       try {
-        await login(data)
-        if (redirect?.current) router.push(redirect.current as string)
-        else router.push('/account')
+        if (!showMfaInput) {
+          await login(data)
+
+          const mfaCode = Math.floor(100000 + Math.random() * 900000).toString()
+          setGeneratedMfaCode(mfaCode)
+          console.log('Codice MFA generato:', mfaCode)
+          setShowMfaInput(true)
+        } else {
+          if (data.mfaCode === generatedMfaCode) {
+            if (redirect?.current) router.push(redirect.current as string)
+            else router.push('/account')
+          } else {
+            setError('Codice MFA errato. Riprova.')
+          }
+        }
       } catch (_) {
-        setError('There was an error with the credentials provided. Please try again.')
+        setError('Errore nelle credenziali fornite. Riprova.')
       }
     },
-    [login, router],
+    [login, router, generatedMfaCode, showMfaInput, redirect],
   )
 
   return (
@@ -52,29 +67,47 @@ const LoginForm: React.FC = () => {
         {'.'}
       </p>
       <Message error={error} className={classes.message} />
-      <Input
-        name="email"
-        label="Email Address"
-        required
-        register={register}
-        error={errors.email}
-        type="email"
-      />
-      <Input
-        name="password"
-        type="password"
-        label="Password"
-        required
-        register={register}
-        error={errors.password}
-      />
+
+      {!showMfaInput ? (
+        <>
+          <Input
+            name="email"
+            label="Email Address"
+            required
+            register={register}
+            error={errors.email}
+            type="email"
+          />
+          <Input
+            name="password"
+            type="password"
+            label="Password"
+            required
+            register={register}
+            error={errors.password}
+          />
+        </>
+      ) : (
+        <>
+          <Input
+            name="mfaCode"
+            type="text"
+            label="Inserisci il codice MFA"
+            required
+            register={register}
+            error={errors.mfaCode}
+          />
+        </>
+      )}
+
       <Button
         type="submit"
         appearance="primary"
-        label={isLoading ? 'Processing' : 'Login'}
+        label={isLoading ? 'Processing' : showMfaInput ? 'Verifica MFA' : 'Login'}
         disabled={isLoading}
         className={classes.submit}
       />
+
       <div>
         <Link href={`/create-account${allParams}`}>Create an account</Link>
         <br />
